@@ -4,12 +4,15 @@
 #define VENDOR_NAME "OpenPPG"
 #define PRODUCT_NAME "Controller C2"
 #define VOLUME_LABEL "OPENPPGC2"
-#define INDEX_URL "https://openppg.com/"
+#define INDEX_URL "https://openppg.com/bootloader"
 #define BOARD_ID "SAMD21G18A-OpenPPG-c2"
 
 #define USB_VID 0x239A
 #define USB_PID 0x0015
 
 #define LED_PIN PIN_PA07
+
+#define LED_TX_PIN PIN_PA11
+#define LED_RX_PIN PIN_PA13
 
 #endif
