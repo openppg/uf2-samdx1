@@ -8,11 +8,8 @@
 #define BOARD_ID "SAMD21G18A-OpenPPG-c2"
 
 #define USB_VID 0x239A
-#define USB_PID 0x0015
+#define USB_PID 0x0145
 
 #define LED_PIN PIN_PA07
-
-#define LED_TX_PIN PIN_PA11
-#define LED_RX_PIN PIN_PA13
 
 #endif
