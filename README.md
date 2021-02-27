@@ -30,7 +30,7 @@ a UF2 file is written and immediately write it to flash.
 * USB CDC (Serial emulation) monitor mode compatible with Arduino
   (including XYZ commands) and BOSSA flashing tool
 * USB MSC interface for writing UF2 files
-* reading of the contests of the flash as an UF2 file via USB MSC
+* reading of the content of the flash as an UF2 file via USB MSC
 * UART Serial (real serial wire) monitor mode (typically disabled due to space constraints)
 * In-memory logging for debugging - use the `logs` target to extract the logs using `openocd`
 * double-tap reset to stay in the bootloader mode
@@ -52,7 +52,7 @@ external flash chip, SD card etc.).
 
 These configuration values can be read from `INFO_UF2.TXT` file.
 Presence of this file can be tested to see if the board supports `UF2` flashing,
-while contest, particularly `Board-ID` field, can be used for feature detection.
+while the contents, particularly `Board-ID` field, can be used for feature detection.
 
 The current flash contents of the board is exposed as `CURRENT.UF2` file.
 This file includes the bootloader address space. The last word of bootloader
@@ -145,7 +145,7 @@ The default board is `zero`. You can build a different one using:
 make BOARD=metro_m0
 ```
 
-If you're working on different board, it's best to create `Makefile.local`
+If you're working on different board, it's best to create `Makefile.user`
 with say `BOARD=metro` to change the default.
 The names `zero` and `metro` refer to subdirectories of `boards/`.
 
