@@ -29,11 +29,11 @@
 
 /**
  * --------------------
- * SAM-BA Implementation on SAMD21
+ * SAM-BA Implementation on SAMD21 and SAMD51
  * --------------------
  * Requirements to use SAM-BA :
  *
- * Supported communication interfaces :
+ * Supported communication interfaces (SAMD21):
  * --------------------
  *
  * SERCOM5 : RX:PB23 TX:PB22
@@ -68,8 +68,6 @@
  *
  * Applications compiled to be executed along with the bootloader will start at
  * 0x2000 (samd21) or 0x4000 (samd51)
- * The bootloader doesn't changes the VTOR register, application code is 
- * taking care of this.
  *
  */
 
@@ -110,7 +108,7 @@ static void check_start_application(void) {
         if (RESET_CONTROLLER->RCAUSE.bit.POR || *DBL_TAP_PTR != DBL_TAP_MAGIC_QUICK_BOOT) {
             // the second tap on reset will go into app
             *DBL_TAP_PTR = DBL_TAP_MAGIC_QUICK_BOOT;
-            // this will be cleared after succesful USB enumeration
+            // this will be cleared after successful USB enumeration
             // this is around 1.5s
             resetHorizon = timerHigh + 50;
             return;
@@ -134,7 +132,11 @@ static void check_start_application(void) {
     }
 
     LED_MSC_OFF();
+
+#if defined(BOARD_RGBLED_CLOCK_PIN)
+    // This won't work for neopixel, because we're running at 1MHz or thereabouts...
     RGBLED_set_color(COLOR_LEAVE);
+#endif
 
     /* Rebase the Stack Pointer */
     __set_MSP(*(uint32_t *)APP_START_ADDRESS);
@@ -150,7 +152,7 @@ extern char _etext;
 extern char _end;
 
 /**
- *  \brief SAMD21 SAM-BA Main loop.
+ *  \brief  SAM-BA Main loop.
  *  \return Unused (ANSI-C compatibility).
  */
 int main(void) {
@@ -159,13 +161,77 @@ int main(void) {
         while (1) {
         }
 
-    // Disable the watchdog, in case the application set it.
 #if defined(SAMD21)
+    // If fuses have been reset to all ones, the watchdog ALWAYS-ON is
+    // set, so we can't turn off the watchdog.  Set the fuse to a
+    // reasonable value and reset. This is a mini version of the fuse
+    // reset code in selfmain.c.
+    if (((uint32_t *)NVMCTRL_AUX0_ADDRESS)[0] == 0xffffffff) {
+        // Clear any error flags.
+        NVMCTRL->STATUS.reg |= NVMCTRL_STATUS_MASK;
+        // Turn off cache and put in manual mode.
+        NVMCTRL->CTRLB.reg = NVMCTRL->CTRLB.reg | NVMCTRL_CTRLB_CACHEDIS | NVMCTRL_CTRLB_MANW;
+        // Set address to write.
+        NVMCTRL->ADDR.reg = NVMCTRL_AUX0_ADDRESS / 2;
+        // Erase auxiliary row.
+        NVMCTRL->CTRLA.reg = NVMCTRL_CTRLA_CMDEX_KEY | NVMCTRL_CTRLA_CMD_EAR;
+	while (!(NVMCTRL->INTFLAG.bit.READY)) {}
+        // Clear page buffer.
+        NVMCTRL->CTRLA.reg = NVMCTRL_CTRLA_CMDEX_KEY | NVMCTRL_CTRLA_CMD_PBC;
+	while (!(NVMCTRL->INTFLAG.bit.READY)) {}
+        // Reasonable fuse values, including 8k BOOTPROT.
+        ((uint32_t *)NVMCTRL_AUX0_ADDRESS)[0] = 0xD8E0C7FA;
+        ((uint32_t *)NVMCTRL_AUX0_ADDRESS)[1] = 0xFFFFFC5D;
+        // Write the fuses
+	NVMCTRL->CTRLA.reg = NVMCTRL_CTRLA_CMDEX_KEY | NVMCTRL_CTRLA_CMD_WAP;
+	while (!(NVMCTRL->INTFLAG.bit.READY)) {}
+        resetIntoBootloader();
+    }
+
+    // Disable the watchdog, in case the application set it.
     WDT->CTRL.reg = 0;
     while(WDT->STATUS.bit.SYNCBUSY) {}
+
 #elif defined(SAMD51)
+    // Disable the watchdog, in case the application set it.
     WDT->CTRLA.reg = 0;
     while(WDT->SYNCBUSY.reg) {}
+
+    // Enable 2.7V brownout detection. The default fuse value is 1.7
+    // Set brownout detection to ~2.7V. Default from factory is 1.7V,
+    // which is too low for proper operation of external SPI flash chips (they are 2.7-3.6V).
+    // Also without this higher level, the SAMD51 will write zeros to flash intermittently.
+    // Disable while changing level.
+
+    SUPC->BOD33.bit.ENABLE = 0;
+    while (!SUPC->STATUS.bit.B33SRDY) {}  // Wait for BOD33 to synchronize.
+    SUPC->BOD33.bit.LEVEL = 200;  // 2.7V: 1.5V + LEVEL * 6mV.
+    // Don't reset right now.
+    SUPC->BOD33.bit.ACTION = SUPC_BOD33_ACTION_NONE_Val;
+    SUPC->BOD33.bit.ENABLE = 1; // enable brown-out detection
+
+    // Wait for BOD33 peripheral to be ready.
+    while (!SUPC->STATUS.bit.BOD33RDY) {}
+
+    // Wait for voltage to rise above BOD33 value.
+    while (SUPC->STATUS.bit.BOD33DET) {}
+
+    // If we are starting from a power-on or a brownout,
+    // wait for the voltage to stabilize. Don't do this on an
+    // external reset because it interferes with the timing of double-click.
+    // "BODVDD" means BOD33.
+    if (RSTC->RCAUSE.bit.POR || RSTC->RCAUSE.bit.BODVDD) {
+        do {
+            // Check again in 100ms.
+            delay(100);
+        } while (SUPC->STATUS.bit.BOD33DET);
+    }
+
+    // Now enable reset if voltage falls below minimum.
+    SUPC->BOD33.bit.ENABLE = 0;
+    while (!SUPC->STATUS.bit.B33SRDY) {}  // Wait for BOD33 to synchronize.
+    SUPC->BOD33.bit.ACTION = SUPC_BOD33_ACTION_RESET_Val;
+    SUPC->BOD33.bit.ENABLE = 1;
 #endif
 
 #if USB_VID == 0x239a && USB_PID == 0x0013     // Adafruit Metro M0
